@@ -3,6 +3,9 @@ const source = releaseSource();
 module.exports = {
   extends: "./electron-builder.yml",
   publish: source,
+  linux: {
+    maintainer: process.env.PMM_PACKAGE_MAINTAINER ?? `Peaky <${source?.owner ?? "Peaky"}@users.noreply.github.com>`,
+  },
   generateUpdatesFilesForAllChannels: false,
   extraMetadata: { pmmUpdateSource: source },
 };

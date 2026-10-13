@@ -19,7 +19,7 @@ jobs:
           - os: windows-latest
             args: --win
           - os: ubuntu-latest
-            args: --linux appimage
+            args: --linux AppImage deb rpm --x64
 
     runs-on: ${{ matrix.os }}
 

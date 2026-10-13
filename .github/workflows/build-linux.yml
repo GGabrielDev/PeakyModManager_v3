@@ -37,12 +37,21 @@ jobs:
         run: npm run build
 
       - name: Build Linux AppImage
-        run: npx electron-builder --config electron-builder.config.cjs --linux --publish=never
+        run: npx electron-builder --config electron-builder.config.cjs --linux AppImage deb rpm --x64 --publish=never
 
-      - name: Upload AppImage
+      - name: Inspect packages and generate pinned Arch recipe
+        run: node scripts/package-artifacts.cjs
+
+      - name: Upload Linux packages
         uses: actions/upload-artifact@v4
         with:
-          name: Linux-AppImage
+          name: Linux-x86_64
+          if-no-files-found: error
           path: |
             dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/PKGBUILD
+            dist/SHA256SUMS
+            dist/package-evidence.json
             dist/latest-linux.yml
