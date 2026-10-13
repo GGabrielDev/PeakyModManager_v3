@@ -182,8 +182,13 @@ try {
     )}`;
   }
   // Running-instance protocol handoff exercises the real packaged URL consumer.
-  const child = spawn(executable, [importUrl("RunningSmoke")], { env, stdio: "ignore" });
+  const child = spawn(executable, [`--user-data-dir=${profile}`, importUrl("RunningSmoke")], { env, stdio: "ignore" });
   await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("Second instance did not exit"));
+    }, 15000);
+    child.once("exit", () => clearTimeout(timer));
     child.once("exit", (code) => (code === 0 ? resolve() : reject(new Error(`Second instance exit ${code}`))));
     child.once("error", reject);
   });
