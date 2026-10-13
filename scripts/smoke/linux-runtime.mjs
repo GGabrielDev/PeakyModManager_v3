@@ -132,7 +132,7 @@ async function assertFixture(root, extracted = false) {
   if (extracted) assert.equal((await fs.stat(root)).mode & 0o777, 0o750);
 }
 async function assertUrlImport(name) {
-  await assertFixture(path.join(library, name));
+  await assertFixture(path.join(library, name, "路径 with spaces"), true);
   const metadata = JSON.parse(await fs.readFile(path.join(library, name, "modinfo.json"), "utf8"));
   assert.equal(metadata.name, name);
   assert.equal(metadata.source, "https://gamebanana.com/mods/1");
