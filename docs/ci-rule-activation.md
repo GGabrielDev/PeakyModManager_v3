@@ -1,6 +1,6 @@
 # Maintainer activation and verification for issue #15
 
-Prepared for `GGabrielDev/PeakyModManager_v3`. The dev integration branch was created without rewriting history from main revision `4934fc88da5ab637d28e1a7c219be09a792be2a1`. Repository Actions is enabled; the authenticated maintainer account reports admin/write access. Workflow-edit permission required refreshing the OAuth token's `workflow` scope. No rule settings, bypass policy or release credentials were changed. This preparation does not close the human-owned activation issue.
+Prepared for `GGabrielDev/PeakyModManager_v3`. The dev integration branch was created without rewriting history from main revision `4934fc88da5ab637d28e1a7c219be09a792be2a1`. Repository Actions is enabled; the authenticated maintainer account reports admin/write access. Workflow-edit permission required refreshing the OAuth token's `workflow` scope. Read-only settings checks returned no rulesets and HTTP 404 “Branch not protected” for classic main protection. No rule settings, bypass policy or release credentials were changed. This preparation does not close the human-owned activation issue.
 
 Merge the CI implementation stack into dev in dependency order. Retarget downstream PRs to dev after their parent merges, then make a reviewed dev-to-main promotion. Main does not contain the new trusted workflow initially: the maintainer must choose and record a one-time bootstrap path before making it required. Do not require a check that has never run on its target or bypass a failing test under the name of bootstrap.
 

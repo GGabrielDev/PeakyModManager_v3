@@ -1,0 +1,5 @@
+{
+  "bump": "patch",
+  "summary": "Document trusted required checks, branch-rule bootstrap and maintainer enforcement verification.",
+  "issue": "https://github.com/GGabrielDev/PeakyModManager_v3/issues/15"
+}
