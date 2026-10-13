@@ -11,7 +11,8 @@ describe.skipIf(process.platform === "win32")("native package removal hooks", ()
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pmm-package-hook-"));
     try {
       const config = require("../electron-builder.config.cjs");
-      const hook = config.linux.afterRemove ?? "node_modules/app-builder-lib/templates/linux/after-remove.tpl";
+      expect(config.deb.afterRemove).toBe(config.rpm.afterRemove);
+      const hook = config.rpm.afterRemove ?? "node_modules/app-builder-lib/templates/linux/after-remove.tpl";
       const script = fs
         .readFileSync(hook, "utf8")
         .replaceAll("${executable}", "fork-pmm")
@@ -42,4 +43,11 @@ describe.skipIf(process.platform === "win32")("native package removal hooks", ()
       fs.rmSync(directory, { recursive: true, force: true });
     }
   });
+});
+
+it("validates package hook settings against the actual builder schema", async () => {
+  const { getConfig, validateConfiguration } = require("app-builder-lib/out/util/config/config");
+  const { DebugLogger } = require("builder-util");
+  const config = await getConfig(process.cwd(), "electron-builder.config.cjs", null);
+  await validateConfiguration(config, new DebugLogger());
 });
