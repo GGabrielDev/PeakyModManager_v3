@@ -4,17 +4,17 @@
 
 Headless Linux needs Xvfb and Electron's runtime libraries. Run `xvfb-run -a node scripts/smoke/linux-runtime.mjs dist/linux-unpacked/peakymodmanager-v3`. If the packaged setuid sandbox is required, set root ownership and mode 4755 on that exact `chrome-sandbox` binary in the disposable runner. This is narrowly scoped runner setup; no global AppArmor disablement or unrestricted `--no-sandbox` is prescribed. AppImage mount/FUSE behavior is distinct from unpacked runtime proof.
 
-| Check                            | Automation                                    | Remaining evidence                                             |
-| -------------------------------- | --------------------------------------------- | -------------------------------------------------------------- |
-| Packaged window/preload/IPC      | Included                                      | Real GNOME/KDE and Wayland/X11 focus                           |
+| Check                            | Automation                                                      | Remaining evidence                                             |
+| -------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------- |
+| Packaged window/preload/IPC      | Included                                                        | Real GNOME/KDE and Wayland/X11 focus                           |
 | Bundled ZIP/7z/RAR/TAR           | Included, Unicode/spaces, payload and Unix file/directory modes | Host filesystem permission matrix                              |
-| Archive import and persistence   | Included, actual IPC/files/process restart    | External drives and overwrite/recovery                         |
-| Cold/running URL import          | Included, actual executable and local HTTP    | Real browser/portal handoff                                    |
-| Startup races/multiple URLs      | Not yet proven                                | Queue implementation #5 and consumer-ready tests               |
-| N→N+1 update                     | Pending                                       | Staged update/recovery implementation #2                       |
-| Native install/upgrade/uninstall | Package-manager containers in package-lifecycle.cjs                                       | Disposable distro hosts and desktop gate #13                   |
-| Apply/runtime INI safety         | Existing source regression tests              | Packaged filesystem matrix after #6/#7                         |
-| Steam discovery                  | Pending implementation #14                    | Native ZZZ/ZZMI layout/ambiguity fixtures and human game proof |
+| Archive import and persistence   | Included, actual IPC/files/process restart                      | External drives and overwrite/recovery                         |
+| Cold/running URL import          | Included, actual executable and local HTTP                      | Real browser/portal handoff                                    |
+| Startup races/multiple URLs      | Not yet proven                                                  | Queue implementation #5 and consumer-ready tests               |
+| N→N+1 update                     | Pending                                                         | Staged update/recovery implementation #2                       |
+| Native install/upgrade/uninstall | Package-manager containers in package-lifecycle.cjs             | Disposable distro hosts and desktop gate #13                   |
+| Apply/runtime INI safety         | Existing source regression tests                                | Packaged filesystem matrix after #6/#7                         |
+| Steam discovery                  | Pending implementation #14                                      | Native ZZZ/ZZMI layout/ambiguity fixtures and human game proof |
 
 The CI workflow in #12 consumes this entry point and always uploads its diagnostics. It must not substitute source tests for packaged results or mark missing coverage as passed. Issue #13 owns native/confined browser, desktop, drag/drop, external drive, Wine/Proton and game validation. This is a staged, bounded gate, not a support certification.
 
