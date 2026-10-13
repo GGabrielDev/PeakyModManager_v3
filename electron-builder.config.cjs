@@ -6,6 +6,32 @@ module.exports = {
   linux: {
     maintainer: process.env.PMM_PACKAGE_MAINTAINER ?? `Peaky <${source?.owner ?? "Peaky"}@users.noreply.github.com>`,
   },
+  deb: {
+    depends: [
+      "libgtk-3-0",
+      "libnotify4",
+      "libnss3",
+      "libxss1",
+      "libxtst6",
+      "xdg-utils",
+      "libatspi2.0-0",
+      "libuuid1",
+      "libsecret-1-0",
+    ],
+  },
+  rpm: {
+    depends: [
+      "gtk3",
+      "libnotify",
+      "nss",
+      "libXScrnSaver",
+      "libXtst",
+      "xdg-utils",
+      "at-spi2-core",
+      "libuuid",
+      "libsecret",
+    ],
+  },
   generateUpdatesFilesForAllChannels: false,
   extraMetadata: {
     pmmUpdateSource: source,
