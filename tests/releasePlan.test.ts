@@ -36,7 +36,10 @@ it("uses the baseline then consumes entries only once across stable tags and int
     git("-c", "user.name=CI Test", "-c", "user.email=ci@example.invalid", "commit", "-m", "change");
   };
   const run = (branch: string) => {
-    execFileSync(process.execPath, [planner, branch], { cwd: directory });
+    execFileSync(process.execPath, [planner, branch], {
+      cwd: directory,
+      env: { ...process.env, GITHUB_ACTIONS: "false" },
+    });
     return JSON.parse(fs.readFileSync(path.join(directory, "release-plan/plan.json"), "utf8"));
   };
   try {
@@ -78,7 +81,10 @@ it("continues after non-fast-forward stable promotion and allows dev synchroniza
     git("commit", "-m", name);
   };
   const run = () => {
-    execFileSync(process.execPath, [planner, "dev"], { cwd: directory });
+    execFileSync(process.execPath, [planner, "dev"], {
+      cwd: directory,
+      env: { ...process.env, GITHUB_ACTIONS: "false" },
+    });
     return JSON.parse(fs.readFileSync(path.join(directory, "release-plan/plan.json"), "utf8"));
   };
   try {
