@@ -149,7 +149,7 @@ Located in **Settings**:
 ## Updates
 
 - **Automatic updates**: After launching the app, wait a few seconds. Once a new version has downloaded, a system notification will let you know that it will be installed after you quit the app.
-- **Manual updates**: Download an installer from the [Releases page](https://github.com/Tian-W001/PeakyModManager_v3/releases), then run it to install the update.
+- **Manual updates**: Download an installer from the Releases page of the distributor that supplied your installed build, then run it to install the update. The packaged homepage identifies that repository; see [build-selected update authority](docs/release-source.md).
 
 Character resources will be added as the game receives updates. If a new character displays the Unknown avatar, please wait for a future update.
 

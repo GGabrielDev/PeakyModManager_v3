@@ -16,21 +16,51 @@ function nextVersion(base, bumps) {
   for (let position = index + 1; position < 3; position++) version[position] = 0;
   return version.join(".");
 }
-function plan(branch, directory = "changes") {
+function releaseHistory(repository, sourceRepository) {
+  const pages = JSON.parse(
+    execFileSync("gh", ["api", `repos/${repository}/releases?per_page=100`, "--paginate", "--slurp"], {
+      encoding: "utf8",
+    })
+  );
+  return pages
+    .flat()
+    .filter((release) => !release.draft && !release.prerelease && /^v\d+\.\d+\.\d+$/.test(release.tag_name))
+    .flatMap((release) => {
+      const body = release.body ?? "";
+      const revision = /^Source revision: ([a-f0-9]{40})$/m.exec(body)?.[1];
+      const owner = /^Source repository: ([\w.-]+\/[\w.-]+)$/m.exec(body)?.[1];
+      if (
+        !revision ||
+        !body.includes("PMM release automation schema: 1") ||
+        (owner !== sourceRepository && !(owner === undefined && repository === sourceRepository))
+      )
+        return [];
+      return [{ tag: release.tag_name, revision }];
+    });
+}
+function plan(branch, directory = "changes", history = []) {
   if (!["dev", "main"].includes(branch)) throw new Error("Releases originate only from dev or main");
   const currentRevision = git("rev-parse", "HEAD");
-  const tags = git("tag", "--merged", "HEAD")
+  // Published source revisions remain valid baselines even when a promotion merge
+  // is not an ancestor of continuing dev, or the release tag lives elsewhere.
+  const local = git("tag")
     .split("\n")
     .filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag))
-    .filter((tag) => branch !== "main" || git("rev-list", "-n", "1", tag) !== currentRevision);
-  tags.sort((left, right) => {
-    const a = parseVersion(left),
-      b = parseVersion(right);
+    .map((tag) => ({ tag, revision: git("rev-list", "-n", "1", tag) }));
+  const candidates = [...local, ...history].filter(
+    (release) => branch !== "main" || release.revision !== currentRevision
+  );
+  candidates.sort((left, right) => {
+    const a = parseVersion(left.tag),
+      b = parseVersion(right.tag);
     return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
   });
-  const previous = tags.at(-1);
+  const baseline = candidates.at(-1);
+  const previous = baseline?.tag;
   const base = previous ?? JSON.parse(fs.readFileSync("package.json", "utf8")).version;
-  const released = new Set(previous ? git("ls-tree", "-r", "--name-only", previous, `${directory}/`).split("\n") : []);
+  const released = new Set(
+    baseline ? git("ls-tree", "-r", "--name-only", baseline.revision, `${directory}/`).split("\n") : []
+  );
   const entries = [];
   for (const name of fs
     .readdirSync(directory)
@@ -39,7 +69,7 @@ function plan(branch, directory = "changes") {
     const file = `${directory}/${name}`,
       content = fs.readFileSync(file, "utf8");
     if (released.has(file)) {
-      if (git("show", `${previous}:${file}`) !== content.trim())
+      if (git("show", `${baseline.revision}:${file}`) !== content.trim())
         throw new Error(`Released entry is immutable: ${file}`);
       continue;
     }
@@ -51,9 +81,11 @@ function plan(branch, directory = "changes") {
     }
     entries.push({ ...entry, file });
   }
+  // A synchronized dev revision still gets its own preview of the next patch;
+  // stable releases and feature-PR metadata continue to require reviewed entries.
   const stable = nextVersion(
     base,
-    entries.map((entry) => entry.bump)
+    entries.length ? entries.map((entry) => entry.bump) : branch === "dev" ? ["patch"] : []
   );
   const revision = git("rev-parse", "HEAD");
   const sequence = Number(git("rev-list", "--count", "HEAD"));
@@ -61,6 +93,8 @@ function plan(branch, directory = "changes") {
   return {
     branch,
     revision,
+    sourceRepository: process.env.GITHUB_REPOSITORY ?? null,
+    baselineRevision: baseline?.revision ?? null,
     previous: previous ?? null,
     version,
     tag: `v${version}`,
@@ -69,6 +103,7 @@ function plan(branch, directory = "changes") {
     entries,
     notes: [
       `Source revision: ${revision}`,
+      ...(process.env.GITHUB_REPOSITORY ? [`Source repository: ${process.env.GITHUB_REPOSITORY}`] : []),
       "PMM release automation schema: 1",
       "",
       ...entries.map((entry) => `- ${entry.summary} (${entry.issue}; ${entry.file})`),
@@ -77,9 +112,12 @@ function plan(branch, directory = "changes") {
     ].join("\n"),
   };
 }
-module.exports = { parseVersion, nextVersion, plan };
+module.exports = { parseVersion, nextVersion, plan, releaseHistory };
 if (require.main === module) {
-  const result = plan(process.argv[2]);
+  const repository = process.env.PMM_RELEASE_REPOSITORY || process.env.GITHUB_REPOSITORY;
+  const history =
+    process.env.GITHUB_ACTIONS === "true" ? releaseHistory(repository, process.env.GITHUB_REPOSITORY) : [];
+  const result = plan(process.argv[2], "changes", history);
   fs.mkdirSync("release-plan", { recursive: true });
   fs.writeFileSync("release-plan/plan.json", JSON.stringify(result, null, 2) + "\n");
   fs.writeFileSync("release-plan/notes.md", result.notes + "\n");

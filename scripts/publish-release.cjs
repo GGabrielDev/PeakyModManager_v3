@@ -8,6 +8,14 @@ if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? "")) throw new Error("Publication r
 if (plan.revision !== process.env.GITHUB_SHA) throw new Error("Plan/revision mismatch");
 const gh = (...args) => execFileSync("gh", args, { encoding: "utf8" }).trim();
 fs.writeFileSync("release-assets/source-revision.txt", plan.revision + "\n");
+fs.writeFileSync(
+  "release-assets/release-baseline.json",
+  JSON.stringify(
+    { schema: 1, version: plan.version, revision: plan.revision, sourceRepository: process.env.GITHUB_REPOSITORY },
+    null,
+    2
+  ) + "\n"
+);
 const files = fs
   .readdirSync("release-assets")
   .filter((name) => fs.statSync(path.join("release-assets", name)).isFile());
@@ -23,17 +31,13 @@ for (const name of files.filter((name) => name.endsWith(".yml"))) {
   if (!contents.includes(`version: ${plan.version}`)) throw new Error(`Metadata/version mismatch: ${name}`);
   if (plan.prerelease && name.startsWith("latest")) throw new Error("Preview must not publish stable metadata");
 }
-const digest = (name) =>
-  crypto
-    .createHash("sha256")
-    .update(fs.readFileSync(path.join("release-assets", name)))
-    .digest("hex");
+const digest = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 fs.writeFileSync(
   "release-assets/SHA256SUMS",
   files
     .filter((name) => name !== "SHA256SUMS")
     .sort()
-    .map((name) => `${digest(name)}  ${name}`)
+    .map((name) => `${digest(path.join("release-assets", name))}  ${name}`)
     .join("\n") + "\n"
 );
 const releaseArgs = ["--repo", repository];
@@ -57,13 +61,11 @@ if (existing && !existing.isDraft) {
   for (const line of fs.readFileSync("release-existing/SHA256SUMS", "utf8").trim().split("\n")) {
     const match = /^([a-f0-9]{64}) {2}([^/\\]+)$/.exec(line);
     if (!match) throw new Error("Malformed completed release checksum");
-    const actual = crypto
-      .createHash("sha256")
-      .update(fs.readFileSync(path.join("release-existing", match[2])))
-      .digest("hex");
+    const actual = digest(path.join("release-existing", match[2]));
     if (actual !== match[1]) throw new Error(`Published asset checksum differs: ${match[2]}`);
   }
   console.log("This revision is already published with identical assets.");
+  retainPreviews();
   process.exit(0);
 }
 if (!existing) {
@@ -97,7 +99,9 @@ gh(
   ...fs.readdirSync("release-assets").map((name) => path.join("release-assets", name))
 );
 gh("release", "edit", plan.tag, ...releaseArgs, "--draft=false", `--latest=${!plan.prerelease}`);
-if (plan.prerelease) {
+retainPreviews();
+function retainPreviews() {
+  if (!plan.prerelease) return;
   const releases = JSON.parse(gh("api", `repos/${repository}/releases?per_page=100`, "--paginate", "--slurp")).flat();
   const owned = releases.filter(
     (release) =>
