@@ -1,0 +1,5 @@
+{
+  "bump": "patch",
+  "summary": "Gate packaged Linux launch, bundled extraction and cold/running import persistence with runtime evidence.",
+  "issue": "https://github.com/GGabrielDev/PeakyModManager_v3/issues/8"
+}
