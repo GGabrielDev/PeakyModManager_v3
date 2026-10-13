@@ -4,6 +4,7 @@ const packageFile = fs.readFileSync("package.json");
 const lockFile = fs.readFileSync("package-lock.json");
 try {
   execFileSync("npm", ["version", "0.0.0", "--no-git-tag-version", "--allow-same-version"], { stdio: "inherit" });
+  execFileSync("npm", ["run", "build"], { stdio: "inherit" });
   execFileSync(
     "npx",
     [
@@ -16,7 +17,6 @@ try {
       "rpm",
       "--x64",
       "--publish=never",
-      "--prepackaged=dist/linux-unpacked",
       "--config.directories.output=lifecycle-previous",
     ],
     { stdio: "inherit" }

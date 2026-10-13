@@ -1,6 +1,8 @@
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-const { packagePolicy, validateMetadata, archRecipe } = createRequire(import.meta.url)("../scripts/package-policy.cjs");
+const { packagePolicy, validateMetadata, validateDesktop, validateApplication, archRecipe } = createRequire(
+  import.meta.url
+)("../scripts/package-policy.cjs");
 const config = {
   appId: "org.fork.pmm",
   productName: "fork-pmm",
@@ -37,6 +39,22 @@ describe("Linux artifact authority and identity", () => {
     expect(recipe).toContain("/opt/fork-pmm");
     expect(recipe).toContain("fork-pmm.desktop");
     expect(recipe).not.toContain("peakymodmanager-v3");
+  });
+  it("checks AppImage desktop version and internal application metadata", () => {
+    const p = policy();
+    const desktop = `Icon=fork-pmm\nExec=AppRun --no-sandbox %U\nMimeType=x-scheme-handler/forkpmm;\nX-AppImage-Version=1.0.0\n`;
+    expect(() => validateDesktop(p, desktop, true)).not.toThrow();
+    expect(() => validateDesktop(p, desktop.replace("1.0.0", "11.0.0"), true)).toThrow();
+    const metadata = {
+      name: "fork-pmm",
+      version: "1.0.0",
+      homepage: "https://github.com/fork/releases",
+      repository: { url: "git+https://github.com/fork/releases.git" },
+      pmmUpdateSource: config.publish,
+    };
+    expect(() => validateApplication(p, metadata)).not.toThrow();
+    expect(() => validateApplication(p, { ...metadata, version: "11.0.0" })).toThrow();
+    expect(() => validateApplication(p, { ...metadata, homepage: "https://github.com/upstream/app" })).toThrow();
   });
   it("rejects wrong actual version, identity, architecture, maintainer and dependencies", () => {
     expect(() => validateMetadata(policy(), "deb", valid)).not.toThrow();

@@ -4,7 +4,14 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
 const { getConfig } = require("app-builder-lib/out/util/config/config");
-const { packagePolicy, validateMetadata, validateDesktop, archRecipe } = require("./package-policy.cjs");
+const {
+  packagePolicy,
+  validateMetadata,
+  validateDesktop,
+  validateApplication,
+  archRecipe,
+} = require("./package-policy.cjs");
+const { extractFile } = require("@electron/asar");
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", ...options });
 const hash = (file) => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
@@ -54,6 +61,12 @@ async function inspect() {
         policy,
         fs.readFileSync(path.join(root, "usr/share/applications", `${policy.executable}.desktop`), "utf8")
       );
+      validateApplication(
+        policy,
+        JSON.parse(
+          extractFile(path.join(root, "opt", policy.installName, "resources/app.asar"), "package.json").toString()
+        )
+      );
       const icons = run("find", [path.join(root, "usr/share/icons"), "-name", `${policy.executable}.png`]).trim();
       if (!icons) throw new Error(`${target} configured icon missing`);
       if (!fs.existsSync(path.join(root, "opt", policy.installName, policy.executable)))
@@ -81,6 +94,10 @@ async function inspect() {
       policy,
       fs.readFileSync(path.join(root, "squashfs-root", `${policy.executable}.desktop`), "utf8"),
       true
+    );
+    validateApplication(
+      policy,
+      JSON.parse(extractFile(path.join(root, "squashfs-root/resources/app.asar"), "package.json").toString())
     );
     for (const name of [policy.executable, `${policy.executable}.png`]) {
       if (!fs.existsSync(path.join(root, "squashfs-root", name))) throw new Error(`AppImage resource missing: ${name}`);
