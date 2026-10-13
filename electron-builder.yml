@@ -3,7 +3,7 @@ productName: peakymodmanager-v3
 directories:
   buildResources: build
 files:
-  - "!{lifecycle-previous,release-plan,release-assets,release-existing,smoke-results}/**/*"
+  - "!{dist,lifecycle-previous,release-plan,release-assets,release-existing,smoke-results}/**/*"
   - "!**/.vscode/*"
   - "!src/*"
   - "!electron.vite.config.{js,ts,mjs,cjs}"
