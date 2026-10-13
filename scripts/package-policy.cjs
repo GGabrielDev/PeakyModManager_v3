@@ -39,7 +39,19 @@ function packagePolicy(config, metadata) {
   const source = config.publish;
   if (!source?.owner || !source?.repo)
     throw new Error("Pinned Arch recipe requires a selected GitHub release repository");
-  return { version: app.version, appId: app.id, executable, installName, artifacts, schemes, targets, source };
+  return {
+    version: app.version,
+    name: app.name,
+    buildVersion: app.buildVersion,
+    appId: app.id,
+    appImageExec: `AppRun ${(config.appImage?.executableArgs ?? linux.executableArgs)?.join(" ") || "--no-sandbox"} %U`,
+    executable,
+    installName,
+    artifacts,
+    schemes,
+    targets,
+    source,
+  };
 }
 function validateMetadata(policy, target, actual) {
   const expected = policy.targets[target];
@@ -68,9 +80,11 @@ function validateDesktop(policy, content, image = false) {
         return [line.slice(0, i), line.slice(i + 1)];
       })
   );
-  const expectedExec = image ? policy.executable : `/opt/${policy.installName}/${policy.executable}`;
-  if (fields.Icon !== policy.executable || fields.Exec?.replaceAll('"', "") !== `${expectedExec} %U`)
+  const expectedExec = image ? policy.appImageExec : `/opt/${policy.installName}/${policy.executable} %U`;
+  if (fields.Icon !== policy.executable || fields.Exec?.replaceAll('"', "") !== expectedExec)
     throw new Error("Desktop executable/icon identity mismatch");
+  if (image && fields["X-AppImage-Version"] !== policy.buildVersion)
+    throw new Error("AppImage version metadata mismatch");
   for (const scheme of policy.schemes) {
     if (!fields.MimeType?.split(";").includes(`x-scheme-handler/${scheme}`))
       throw new Error(`Desktop protocol ${scheme} missing`);
@@ -103,4 +117,15 @@ package() {
 }
 `;
 }
-module.exports = { packagePolicy, validateMetadata, validateDesktop, archRecipe };
+function validateApplication(policy, metadata) {
+  if (metadata.version !== policy.version || metadata.name !== policy.name)
+    throw new Error("Packaged application name/version mismatch");
+  const homepage = `https://github.com/${policy.source.owner}/${policy.source.repo}`;
+  if (metadata.homepage !== homepage || metadata.repository?.url !== `git+${homepage}.git`)
+    throw new Error("Packaged application release authority mismatch");
+  for (const key of ["owner", "repo", "channel"]) {
+    if (metadata.pmmUpdateSource?.[key] !== policy.source[key])
+      throw new Error(`Packaged update source ${key} mismatch`);
+  }
+}
+module.exports = { packagePolicy, validateMetadata, validateDesktop, validateApplication, archRecipe };
