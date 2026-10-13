@@ -9,15 +9,9 @@ import { createHash } from "node:crypto";
 
 const executable = path.resolve(process.argv[2] ?? "dist/linux-unpacked/peakymodmanager-v3");
 const packageRoot = path.dirname(executable);
-const work = await fs.mkdtemp(path.join(os.tmpdir(), "pmm-packaged-smoke-"));
-const library = path.join(work, "library with spaces");
-const profile = path.join(work, "profile");
+let work, library, profile;
 const evidence = {
-  revision: execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   executable,
-  sha256: createHash("sha256")
-    .update(await fs.readFile(executable))
-    .digest("hex"),
   node: process.version,
   platform: process.platform,
   architecture: process.arch,
@@ -26,14 +20,13 @@ const evidence = {
     "desktop registration",
     "interactive browsers",
     "X11/Wayland focus",
-    "native package lifecycle",
     "N→N+1 updater replacement",
     "Steam discovery (issue #14)",
   ],
 };
 let app, socket, server;
 let logs = "";
-const env = { ...process.env, XDG_CONFIG_HOME: path.join(work, "config"), XDG_DATA_HOME: path.join(work, "data") };
+let env;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(callback, description, timeout = 30000) {
   const end = Date.now() + timeout;
@@ -120,13 +113,51 @@ async function stop() {
   }
   app = null;
 }
+async function assertFixture(root, extracted = false) {
+  assert.equal(await fs.readFile(path.join(root, "payload.txt"), "utf8"), "packaged archive extraction\n");
+  assert.equal(await fs.readFile(path.join(root, "run.sh"), "utf8"), "#!/bin/sh\nexit 0\n");
+  for (const [relative, mode] of [
+    ["payload.txt", 0o640],
+    ["run.sh", 0o751],
+    ["restricted", 0o750],
+    ["restricted/private.txt", 0o640],
+  ]) {
+    assert.equal((await fs.stat(path.join(root, relative))).mode & 0o777, mode, `Permission mismatch: ${relative}`);
+  }
+  if (extracted) assert.equal((await fs.stat(root)).mode & 0o777, 0o750);
+}
+async function assertUrlImport(name) {
+  await assertFixture(path.join(library, name));
+  const metadata = JSON.parse(await fs.readFile(path.join(library, name, "modinfo.json"), "utf8"));
+  assert.equal(metadata.name, name);
+  assert.equal(metadata.source, "https://gamebanana.com/mods/1");
+  const mods = await evaluate('window.electron.ipcRenderer.invoke("load-library", true)');
+  assert.ok(
+    mods.some((mod) => mod.name === name && mod.source === metadata.source),
+    `Imported ${name} must load from library`
+  );
+}
 try {
+  evidence.revision = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  evidence.sha256 = createHash("sha256")
+    .update(await fs.readFile(executable))
+    .digest("hex");
+  work = await fs.mkdtemp(path.join(os.tmpdir(), "pmm-packaged-smoke-"));
+  library = path.join(work, "library with spaces");
+  profile = path.join(work, "profile");
+  env = { ...process.env, XDG_CONFIG_HOME: path.join(work, "config"), XDG_DATA_HOME: path.join(work, "data") };
   await fs.mkdir(library, { recursive: true });
   await fs.mkdir(env.XDG_CONFIG_HOME, { recursive: true });
   await fs.mkdir(env.XDG_DATA_HOME, { recursive: true });
   const source = path.join(work, "source");
   await fs.mkdir(path.join(source, "路径 with spaces"), { recursive: true });
   await fs.writeFile(path.join(source, "路径 with spaces", "payload.txt"), "packaged archive extraction\n");
+  const fixtureRoot = path.join(source, "路径 with spaces");
+  await fs.chmod(fixtureRoot, 0o750);
+  await fs.chmod(path.join(fixtureRoot, "payload.txt"), 0o640);
+  await fs.writeFile(path.join(fixtureRoot, "run.sh"), "#!/bin/sh\nexit 0\n", { mode: 0o751 });
+  await fs.mkdir(path.join(fixtureRoot, "restricted"), { mode: 0o750 });
+  await fs.writeFile(path.join(fixtureRoot, "restricted/private.txt"), "private fixture\n", { mode: 0o640 });
   const seven = path.join(packageRoot, "resources/app.asar.unpacked/node_modules/7zip-bin-full/linux/x64/7zz");
   await fs.access(seven, fs.constants.X_OK);
   for (const extension of ["zip", "7z", "tar"]) {
@@ -136,11 +167,10 @@ try {
   for (const extension of ["zip", "7z", "tar", "rar"]) {
     const output = path.join(work, `extract-${extension}`);
     execFileSync(seven, ["x", path.join(work, `fixture.${extension}`), `-o${output}`, "-y"]);
-    assert.equal(
-      await fs.readFile(path.join(output, "路径 with spaces", "payload.txt"), "utf8"),
-      "packaged archive extraction\n"
+    await assertFixture(path.join(output, "路径 with spaces"), true);
+    evidence.checks.push(
+      `bundled ${extension.toUpperCase()} extraction with Unicode/spaces, executable and restricted modes`
     );
-    evidence.checks.push(`bundled ${extension.toUpperCase()} extraction with Unicode/spaces`);
   }
   start();
   await connect();
@@ -152,10 +182,7 @@ try {
     `window.electron.ipcRenderer.invoke("import-mod", ${JSON.stringify(path.join(work, "fixture.zip"))})`
   );
   assert.ok(response?.name, "real packaged import handler must return a mod");
-  assert.equal(
-    await fs.readFile(path.join(library, response.name, "payload.txt"), "utf8"),
-    "packaged archive extraction\n"
-  );
+  await assertFixture(path.join(library, response.name));
   evidence.checks.push("real packaged archive import into selected library");
   await stop();
   start();
@@ -193,18 +220,24 @@ try {
     child.once("error", reject);
   });
   await until(async () => {
-    await fs.access(path.join(library, "RunningSmoke", "modinfo.json"));
+    await assertUrlImport("RunningSmoke");
     return true;
-  }, "running-instance URL import persistence");
-  evidence.checks.push("running-instance URL download, extraction and library persistence");
+  }, "complete running-instance URL import");
+  evidence.checks.push("running-instance URL download, extracted payload, permissions and loaded metadata");
   await stop();
   start(importUrl("ColdSmoke"));
   await connect();
   await until(async () => {
-    await fs.access(path.join(library, "ColdSmoke", "modinfo.json"));
+    await assertUrlImport("ColdSmoke");
     return true;
-  }, "cold URL import persistence");
-  evidence.checks.push("cold argv URL import persistence");
+  }, "complete cold URL import");
+  evidence.checks.push("cold argv URL download, extracted payload, permissions and loaded metadata");
+  await stop();
+  start();
+  await connect();
+  assert.equal(await evaluate('window.electron.ipcRenderer.invoke("get-library-path")'), library);
+  for (const name of ["RunningSmoke", "ColdSmoke"]) await assertUrlImport(name);
+  evidence.checks.push("both URL imports survive restart with complete payload and loaded metadata");
   evidence.status = "passed";
 } catch (error) {
   evidence.status = "failed";
@@ -220,5 +253,5 @@ try {
   await fs.mkdir("smoke-results", { recursive: true });
   await fs.writeFile("smoke-results/linux-runtime.json", JSON.stringify(evidence, null, 2) + "\n");
   console.log(JSON.stringify(evidence, null, 2));
-  if (evidence.status === "passed") await fs.rm(work, { recursive: true, force: true });
+  if (evidence.status === "passed" && work) await fs.rm(work, { recursive: true, force: true });
 }
