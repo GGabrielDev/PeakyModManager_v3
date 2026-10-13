@@ -35,7 +35,7 @@ if (args[0] === 'release' && args[1] === 'view') {
   for (const file of fs.readdirSync('published')) fs.copyFileSync(path.join('published',file), path.join(value('--dir'),file));
   save();
 } else if (args[0] === 'release' && args[1] === 'delete') { save();
-} else if (args[0] === 'api') { save(); console.log(JSON.stringify([ [...(state.previews || []), ...(state.release ? [state.release] : [])] ]));
+} else if (args[0] === 'api') { save(); if (process.env.FAIL_RETENTION === 'true') process.exit(1); console.log(JSON.stringify([ [...(state.previews || []), ...(state.release ? [state.release] : [])] ]));
 } else { save(); process.exit(3); }
 `;
 function fixture(preview = false) {
@@ -56,20 +56,26 @@ function fixture(preview = false) {
   fs.writeFileSync(path.join(directory, "release-assets/PKGBUILD"), "checksum-pinned fixture");
   for (const suffix of ["", "-linux"])
     fs.writeFileSync(path.join(directory, `release-assets/${channel}${suffix}.yml`), `version: ${version}\n`);
-  const run = (failUpload = false) =>
-    execFileSync(process.execPath, [publisher], {
-      cwd: directory,
-      env: {
-        ...process.env,
-        PATH: `${path.join(directory, "bin")}${path.delimiter}${process.env.PATH}`,
-        GITHUB_SHA: revision,
-        GITHUB_REPOSITORY: "owner/app",
-        PMM_RELEASE_REPOSITORY: "owner/app",
-        GH_TOKEN: "fixture-not-a-real-token",
-        FAIL_UPLOAD: String(failUpload),
+  const run = (failUpload = false, failRetention = false) =>
+    execFileSync(
+      process.execPath,
+      [publisher],
+      {
+        cwd: directory,
+        env: {
+          ...process.env,
+          PATH: `${path.join(directory, "bin")}${path.delimiter}${process.env.PATH}`,
+          GITHUB_SHA: revision,
+          GITHUB_REPOSITORY: "owner/app",
+          PMM_RELEASE_REPOSITORY: "owner/app",
+          GH_TOKEN: "fixture-not-a-real-token",
+          FAIL_UPLOAD: String(failUpload),
+          FAIL_RETENTION: String(failRetention),
+        },
+        stdio: "pipe",
       },
-      stdio: "pipe",
-    });
+      20000
+    );
   const state = () => JSON.parse(fs.readFileSync(path.join(directory, "fake-gh-state.json"), "utf8"));
   return { directory, run, state };
 }
@@ -94,7 +100,7 @@ describe.skipIf(process.platform === "win32")("staged publication and recovery",
     } finally {
       fs.rmSync(f.directory, { recursive: true, force: true });
     }
-  });
+  }, 20000);
   it("leaves failed uploads as drafts and recovers partial assets without mixing revisions", () => {
     const f = fixture();
     try {
@@ -106,7 +112,20 @@ describe.skipIf(process.platform === "win32")("staged publication and recovery",
     } finally {
       fs.rmSync(f.directory, { recursive: true, force: true });
     }
-  });
+  }, 20000);
+  it("retries retention after a completed preview rerun", () => {
+    const f = fixture(true);
+    try {
+      expect(() => f.run(false, true)).toThrow();
+      expect(f.state().release.isDraft).toBe(false);
+      const before = f.state().calls.filter((args: string[]) => args[0] === "api").length;
+      f.run();
+      expect(f.state().calls.filter((args: string[]) => args[0] === "api").length).toBe(before + 1);
+      expect(f.state().calls.filter((args: string[]) => args[1] === "edit")).toHaveLength(1);
+    } finally {
+      fs.rmSync(f.directory, { recursive: true, force: true });
+    }
+  }, 20000);
   it("prunes only owned obsolete previews while preserving stable and foreign releases", () => {
     const f = fixture(true);
     try {
@@ -140,5 +159,5 @@ describe.skipIf(process.platform === "win32")("staged publication and recovery",
     } finally {
       fs.rmSync(f.directory, { recursive: true, force: true });
     }
-  });
+  }, 20000);
 });
