@@ -31,3 +31,25 @@ describe("build-selected release source", () => {
     expect(() => releaseSource({ PMM_RELEASE_CHANNEL: "beta" })).toThrow();
   });
 });
+
+describe("packaged release authority", () => {
+  it("derives homepage and repository from the selected distributor", () => {
+    const require = createRequire(import.meta.url);
+    const previous = process.env.PMM_RELEASE_REPOSITORY;
+    process.env.PMM_RELEASE_REPOSITORY = "distributor/releases";
+    try {
+      delete require.cache[require.resolve("../electron-builder.config.cjs")];
+      const config = require("../electron-builder.config.cjs");
+      expect(config.extraMetadata.homepage).toBe("https://github.com/distributor/releases");
+      expect(config.extraMetadata.repository).toEqual({
+        type: "git",
+        url: "git+https://github.com/distributor/releases.git",
+      });
+      expect(config.extraMetadata.pmmUpdateSource).toEqual(config.publish);
+    } finally {
+      if (previous === undefined) delete process.env.PMM_RELEASE_REPOSITORY;
+      else process.env.PMM_RELEASE_REPOSITORY = previous;
+      delete require.cache[require.resolve("../electron-builder.config.cjs")];
+    }
+  });
+});
