@@ -57,25 +57,20 @@ function fixture(preview = false) {
   for (const suffix of ["", "-linux"])
     fs.writeFileSync(path.join(directory, `release-assets/${channel}${suffix}.yml`), `version: ${version}\n`);
   const run = (failUpload = false, failRetention = false) =>
-    execFileSync(
-      process.execPath,
-      [publisher],
-      {
-        cwd: directory,
-        env: {
-          ...process.env,
-          PATH: `${path.join(directory, "bin")}${path.delimiter}${process.env.PATH}`,
-          GITHUB_SHA: revision,
-          GITHUB_REPOSITORY: "owner/app",
-          PMM_RELEASE_REPOSITORY: "owner/app",
-          GH_TOKEN: "fixture-not-a-real-token",
-          FAIL_UPLOAD: String(failUpload),
-          FAIL_RETENTION: String(failRetention),
-        },
-        stdio: "pipe",
+    execFileSync(process.execPath, [publisher], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        PATH: `${path.join(directory, "bin")}${path.delimiter}${process.env.PATH}`,
+        GITHUB_SHA: revision,
+        GITHUB_REPOSITORY: "owner/app",
+        PMM_RELEASE_REPOSITORY: "owner/app",
+        GH_TOKEN: "fixture-not-a-real-token",
+        FAIL_UPLOAD: String(failUpload),
+        FAIL_RETENTION: String(failRetention),
       },
-      20000
-    );
+      stdio: "pipe",
+    });
   const state = () => JSON.parse(fs.readFileSync(path.join(directory, "fake-gh-state.json"), "utf8"));
   return { directory, run, state };
 }
