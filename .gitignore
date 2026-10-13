@@ -7,3 +7,7 @@ out
 .codegraph/
 
 smoke-results/
+
+release-plan/
+release-assets/
+release-existing/

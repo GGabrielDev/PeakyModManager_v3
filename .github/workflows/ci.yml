@@ -1,0 +1,192 @@
+name: CI and automatic releases
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  source-policy:
+    name: Source branch policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify trusted promotion source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "$EVENT_NAME" == pull_request && "$BASE" == main ]]; then
+            [[ "$HEAD" == dev && "$HEAD_REPOSITORY" == "$REPOSITORY" ]] || {
+              echo 'Only same-repository dev may target main.' >&2
+              exit 1
+            }
+          fi
+  plan:
+    name: Reviewed release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      channel: ${{ steps.plan.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Require new change entry on feature PRs
+        if: github.event_name == 'pull_request' && github.base_ref != 'main'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- 'changes/*.json' | grep . || {
+            echo 'Add a reviewed changes/*.json entry with bump, summary and issue URL.' >&2
+            exit 1
+          }
+      - name: Compute exact revision plan
+        id: plan
+        env:
+          BRANCH: ${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'main' || 'dev') || github.ref_name }}
+        run: node scripts/release-plan.cjs "$BRANCH"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-plan-${{ github.sha }}
+          path: release-plan/
+  validate:
+    name: Validate (${{ matrix.os }})
+    needs: [source-policy, plan]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PMM_RELEASE_REPOSITORY: ${{ vars.PMM_RELEASE_REPOSITORY || github.repository }}
+      PMM_RELEASE_CHANNEL: ${{ needs.plan.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run build
+  package:
+    name: Package (${{ matrix.os }})
+    needs: [validate, plan]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            args: --linux AppImage deb rpm --x64
+            platform: linux
+          - os: windows-latest
+            args: --win --x64
+            platform: windows
+    runs-on: ${{ matrix.os }}
+    env:
+      PMM_RELEASE_REPOSITORY: ${{ vars.PMM_RELEASE_REPOSITORY || github.repository }}
+      PMM_RELEASE_CHANNEL: ${{ needs.plan.outputs.channel }}
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Set planned version without repository commits
+        run: npm version "$env:RELEASE_VERSION" --no-git-tag-version --allow-same-version
+        if: runner.os == 'Windows'
+      - name: Set planned version without repository commits
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
+        if: runner.os == 'Linux'
+      - run: npm run build
+      - name: Install packaging/runtime validation tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm xvfb libgtk-3-0 libnss3 libasound2t64
+      - name: Build complete artifact set without publication
+        run: npx electron-builder --config electron-builder.config.cjs ${{ matrix.args }} --publish=never
+      - name: Inspect actual Linux packages and generate pinned Arch recipe
+        if: runner.os == 'Linux'
+        run: node scripts/package-artifacts.cjs
+      - name: Configure only the packaged setuid sandbox
+        if: runner.os == 'Linux'
+        run: |
+          sudo chown root:root dist/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 dist/linux-unpacked/chrome-sandbox
+      - name: Packaged Linux runtime gate
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run smoke:linux
+      - name: Upload runtime evidence even on failure
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-evidence-${{ github.sha }}
+          path: smoke-results/
+          if-no-files-found: warn
+      - name: Upload validated release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ matrix.platform }}-${{ github.sha }}
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/*.exe
+            dist/*.blockmap
+            dist/*.yml
+            dist/PKGBUILD
+            dist/package-evidence.json
+          if-no-files-found: error
+  required:
+    name: Required CI
+    if: always()
+    needs: [source-policy, plan, validate, package]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          results = json.loads(os.environ['RESULTS'])
+          assert all(job['result'] == 'success' for job in results.values()), results
+          PY
+  publish:
+    name: Publish exact revision
+    if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
+    needs: [required, plan]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      PMM_RELEASE_REPOSITORY: ${{ vars.PMM_RELEASE_REPOSITORY || github.repository }}
+      GH_TOKEN: ${{ secrets.PMM_RELEASE_TOKEN || github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan-${{ github.sha }}
+          path: release-plan/
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*-${{ github.sha }}
+          path: release-assets/
+          merge-multiple: true
+      - run: node scripts/publish-release.cjs

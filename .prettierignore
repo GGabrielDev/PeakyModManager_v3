@@ -4,3 +4,10 @@ pnpm-lock.yaml
 LICENSE.md
 tsconfig.json
 tsconfig.*.json
+
+# Agent instructions are maintained independently from application source.
+AGENTS.md
+release-plan/
+release-assets/
+release-existing/
+smoke-results/

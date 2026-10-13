@@ -1,0 +1,5 @@
+{
+  "bump": "minor",
+  "summary": "Add required validation and reviewed-entry-derived dev preview/main stable release automation.",
+  "issue": "https://github.com/GGabrielDev/PeakyModManager_v3/issues/12"
+}
