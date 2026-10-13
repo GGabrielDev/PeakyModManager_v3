@@ -34,5 +34,12 @@ export default defineConfig(
       "max-len": ["warn", { code: 120 }],
     },
   },
+  {
+    files: ["**/*.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+      "@typescript-eslint/explicit-function-return-type": "off",
+    },
+  },
   eslintConfigPrettier
 );
