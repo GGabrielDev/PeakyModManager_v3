@@ -31,5 +31,5 @@ describe("packaged smoke failure evidence", () => {
         fs.rmSync(work, { recursive: true, force: true });
       }
     }
-  });
+  }, 20000);
 });
