@@ -103,13 +103,17 @@ async function stop() {
   socket?.close();
   socket = null;
   if (app && app.exitCode === null && app.signalCode === null) {
-    app.kill("SIGTERM");
+    const child = app;
     await new Promise((resolve) => {
-      app.once("exit", resolve);
-      setTimeout(() => {
-        app.kill("SIGKILL");
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
         resolve();
-      }, 5000).unref();
+      }, 5000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      child.kill("SIGTERM");
     });
   }
   app = null;
