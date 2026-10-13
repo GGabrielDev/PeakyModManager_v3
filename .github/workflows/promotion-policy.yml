@@ -1,0 +1,24 @@
+name: Trusted promotion policy
+on:
+  pull_request_target:
+    branches: [dev, main]
+    types: [opened, synchronize, reopened, edited]
+permissions: {}
+jobs:
+  trusted-source:
+    name: Trusted promotion source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check event metadata without checking out or executing PR code
+        env:
+          BASE: ${{ github.base_ref }}
+          HEAD: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "$BASE" == main ]]; then
+            [[ "$HEAD" == dev && "$HEAD_REPOSITORY" == "$REPOSITORY" ]] || {
+              echo 'Only same-repository dev may promote into main.' >&2
+              exit 1
+            }
+          fi

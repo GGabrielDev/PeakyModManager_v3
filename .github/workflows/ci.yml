@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   source-policy:
-    name: Source branch policy
+    name: Source branch validation
     runs-on: ubuntu-latest
     steps:
       - name: Verify trusted promotion source
