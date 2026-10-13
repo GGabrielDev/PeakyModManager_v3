@@ -9,7 +9,14 @@ describe("packaged smoke failure evidence", () => {
     const script = path.resolve("scripts/smoke/linux-runtime.mjs");
     for (const outsideGit of [false, true]) {
       const work = fs.mkdtempSync(path.join(os.tmpdir(), "pmm-smoke-preflight-"));
-      const cwd = outsideGit ? work : process.cwd();
+      if (!outsideGit) spawnSync("git", ["init", "--initial-branch=main"], { cwd: work });
+      if (!outsideGit)
+        spawnSync(
+          "git",
+          ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "fixture"],
+          { cwd: work }
+        );
+      const cwd = work;
       try {
         const result = spawnSync(process.execPath, [script, path.join(work, "missing-executable")], {
           cwd,
