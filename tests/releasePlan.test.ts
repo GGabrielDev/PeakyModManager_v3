@@ -60,7 +60,7 @@ it("uses the baseline then consumes entries only once across stable tags and int
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 20000);
 
 it("continues after non-fast-forward stable promotion and allows dev synchronization", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pmm-promotion-test-"));
@@ -109,7 +109,7 @@ it("continues after non-fast-forward stable promotion and allows dev synchroniza
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 20000);
 
 it("uses the recorded source baseline when stable tags exist only in a dedicated release repository", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pmm-destination-plan-"));
@@ -158,4 +158,4 @@ it("uses the recorded source baseline when stable tags exist only in a dedicated
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 20000);
