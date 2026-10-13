@@ -122,6 +122,8 @@ async function stop() {
 }
 try {
   await fs.mkdir(library, { recursive: true });
+  await fs.mkdir(env.XDG_CONFIG_HOME, { recursive: true });
+  await fs.mkdir(env.XDG_DATA_HOME, { recursive: true });
   const source = path.join(work, "source");
   await fs.mkdir(path.join(source, "路径 with spaces"), { recursive: true });
   await fs.writeFile(path.join(source, "路径 with spaces", "payload.txt"), "packaged archive extraction\n");
@@ -151,7 +153,7 @@ try {
   );
   assert.ok(response?.name, "real packaged import handler must return a mod");
   assert.equal(
-    await fs.readFile(path.join(library, response.name, "路径 with spaces", "payload.txt"), "utf8"),
+    await fs.readFile(path.join(library, response.name, "payload.txt"), "utf8"),
     "packaged archive extraction\n"
   );
   evidence.checks.push("real packaged archive import into selected library");
