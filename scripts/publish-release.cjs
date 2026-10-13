@@ -7,6 +7,7 @@ const repository = process.env.PMM_RELEASE_REPOSITORY || process.env.GITHUB_REPO
 if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? "")) throw new Error("Publication repository must be OWNER/REPO");
 if (plan.revision !== process.env.GITHUB_SHA) throw new Error("Plan/revision mismatch");
 const gh = (...args) => execFileSync("gh", args, { encoding: "utf8" }).trim();
+fs.writeFileSync("release-assets/source-revision.txt", plan.revision + "\n");
 const files = fs
   .readdirSync("release-assets")
   .filter((name) => fs.statSync(path.join("release-assets", name)).isFile());
@@ -35,7 +36,6 @@ fs.writeFileSync(
     .map((name) => `${digest(name)}  ${name}`)
     .join("\n") + "\n"
 );
-fs.writeFileSync("release-assets/source-revision.txt", plan.revision + "\n");
 const releaseArgs = ["--repo", repository];
 let existing;
 try {
@@ -121,7 +121,6 @@ if (plan.prerelease) {
     return 0;
   });
   for (const release of owned.slice(20)) {
-    if (release.tag_name === plan.tag) continue;
     gh("release", "delete", release.tag_name, ...releaseArgs, "--yes", "--cleanup-tag");
   }
 }
