@@ -37,7 +37,8 @@ async function until(callback, description, timeout = 30000) {
     } catch {
       /* wait for startup */
     }
-    if (app && app.exitCode !== null) throw new Error(`Packaged app exited (${app.exitCode}): ${logs}`);
+    if (app && (app.exitCode !== null || app.signalCode !== null))
+      throw new Error(`Packaged app exited (${app.exitCode ?? app.signalCode}): ${logs}`);
     await pause(100);
   }
   throw new Error(`Timed out: ${description}\n${logs}`);
@@ -101,7 +102,7 @@ function start(url) {
 async function stop() {
   socket?.close();
   socket = null;
-  if (app && app.exitCode === null) {
+  if (app && app.exitCode === null && app.signalCode === null) {
     app.kill("SIGTERM");
     await new Promise((resolve) => {
       app.once("exit", resolve);
