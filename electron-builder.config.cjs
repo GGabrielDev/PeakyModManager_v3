@@ -4,10 +4,10 @@ module.exports = {
   extends: "./electron-builder.yml",
   publish: source,
   linux: {
-    afterRemove: "scripts/linux/after-remove.tpl",
     maintainer: process.env.PMM_PACKAGE_MAINTAINER ?? `Peaky <${source?.owner ?? "Peaky"}@users.noreply.github.com>`,
   },
   deb: {
+    afterRemove: "scripts/linux/after-remove.tpl",
     depends: [
       "libgtk-3-0",
       "libnotify4",
@@ -21,6 +21,7 @@ module.exports = {
     ],
   },
   rpm: {
+    afterRemove: "scripts/linux/after-remove.tpl",
     depends: [
       "gtk3",
       "libnotify",
