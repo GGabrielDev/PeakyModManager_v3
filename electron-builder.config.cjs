@@ -4,6 +4,7 @@ module.exports = {
   extends: "./electron-builder.yml",
   publish: source,
   linux: {
+    afterRemove: "scripts/linux/after-remove.tpl",
     maintainer: process.env.PMM_PACKAGE_MAINTAINER ?? `Peaky <${source?.owner ?? "Peaky"}@users.noreply.github.com>`,
   },
   deb: {
