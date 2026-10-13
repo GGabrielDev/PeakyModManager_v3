@@ -1,3 +1,4 @@
+/* eslint @typescript-eslint/explicit-function-return-type: "off" */
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
