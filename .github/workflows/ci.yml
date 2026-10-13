@@ -2,7 +2,7 @@ name: CI and automatic releases
 on:
   pull_request:
   push:
-    branches: [dev, main]
+    branches: [dev, main, "ci/**"]
 permissions:
   contents: read
 concurrency:
@@ -52,7 +52,7 @@ jobs:
       - name: Compute exact revision plan
         id: plan
         env:
-          BRANCH: ${{ github.event_name == 'pull_request' && (github.base_ref == 'main' && 'main' || 'dev') || github.ref_name }}
+          BRANCH: ${{ (github.event_name == 'pull_request' && github.base_ref == 'main' || github.event_name == 'push' && github.ref_name == 'main') && 'main' || 'dev' }}
         run: node scripts/release-plan.cjs "$BRANCH"
       - uses: actions/upload-artifact@v4
         with:
