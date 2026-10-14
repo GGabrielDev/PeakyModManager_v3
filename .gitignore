@@ -6,4 +6,5 @@ out
 *.log*
 .codegraph/
 
+smoke-results/
 lifecycle-previous/
