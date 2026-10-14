@@ -4,6 +4,7 @@ import { app, ipcMain } from "electron";
 
 const updatesEnabled = () =>
   app.isPackaged &&
+  process.env.PMM_PACKAGE_MANAGED !== "1" &&
   __PMM_UPDATE_SOURCE__ !== null &&
   (process.platform === "win32" || (process.platform === "linux" && Boolean(process.env.APPIMAGE)));
 

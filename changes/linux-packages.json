@@ -1,0 +1,5 @@
+{
+  "bump": "minor",
+  "summary": "Prepare x86_64 AppImage, DEB, RPM and checksum-pinned Arch distribution artifacts.",
+  "issue": "https://github.com/GGabrielDev/PeakyModManager_v3/issues/4"
+}

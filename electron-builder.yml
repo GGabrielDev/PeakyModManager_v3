@@ -3,6 +3,7 @@ productName: peakymodmanager-v3
 directories:
   buildResources: build
 files:
+  - "!{dist,lifecycle-previous,release-plan,release-assets,release-existing,smoke-results}/**/*"
   - "!**/.vscode/*"
   - "!src/*"
   - "!electron.vite.config.{js,ts,mjs,cjs}"
@@ -46,9 +47,10 @@ dmg:
 linux:
   target:
     - AppImage
-    - snap
     - deb
-  maintainer: electronjs.org
+    - rpm
+  executableName: peakymodmanager-v3
+  artifactName: ${name}-${version}-${arch}.${ext}
   category: Utility
   protocols:
     - name: PeakyModManager URL Scheme
