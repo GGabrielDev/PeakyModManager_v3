@@ -1,4 +1,7 @@
 import { resolve } from "path";
+import { createRequire } from "node:module";
+
+const { releaseSource } = createRequire(import.meta.url)("./scripts/release-source.cjs");
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -9,6 +12,7 @@ export default defineConfig(({ command }) => {
 
   return {
     main: {
+      define: { __PMM_UPDATE_SOURCE__: JSON.stringify(releaseSource()) },
       resolve: {
         alias: {
           "@main": resolve("src/main"),

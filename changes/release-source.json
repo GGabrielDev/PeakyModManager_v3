@@ -1,0 +1,5 @@
+{
+  "bump": "patch",
+  "summary": "Select repository and updater channel at build time and disable unconfigured local updates.",
+  "issue": "https://github.com/GGabrielDev/PeakyModManager_v3/issues/3"
+}
