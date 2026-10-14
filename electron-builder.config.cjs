@@ -18,6 +18,7 @@ module.exports = {
       "libatspi2.0-0",
       "libuuid1",
       "libsecret-1-0",
+      "findutils",
     ],
   },
   rpm: {
@@ -32,6 +33,7 @@ module.exports = {
       "at-spi2-core",
       "libuuid",
       "libsecret",
+      "findutils",
     ],
   },
   generateUpdatesFilesForAllChannels: false,
