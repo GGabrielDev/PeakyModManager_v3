@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, it, expect, vi } from "vitest";
 import { processModInfo, loadLibrary, deleteMod } from "@main/domain/modLibrary";
 import { ModLibraryDeps } from "@main/domain/modLibrary";
@@ -89,11 +90,11 @@ describe("processModInfo", () => {
     expect(result.name).toBe("CoolMod");
   });
 
-  it("should extract folder name correctly from Windows path", async () => {
+  it("should extract folder name correctly from the native platform path", async () => {
     const deps = makeDeps({
       readFile: async () => JSON.stringify({ name: "X", title: "X" }),
     });
-    const result = await processModInfo("C:\\Users\\Tian\\Desktop\\library\\CoolMod", deps);
+    const result = await processModInfo(path.join("C:", "Users", "Tian", "Desktop", "library", "CoolMod"), deps);
     expect(result.name).toBe("CoolMod");
   });
 
