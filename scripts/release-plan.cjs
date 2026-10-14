@@ -16,27 +16,62 @@ function nextVersion(base, bumps) {
   for (let position = index + 1; position < 3; position++) version[position] = 0;
   return version.join(".");
 }
-function releaseHistory(repository, sourceRepository) {
+function ownsRelease(body, repository, sourceRepository) {
+  const owner = /^Source repository: ([\w.-]+\/[\w.-]+)$/m.exec(body ?? "")?.[1];
+  return (
+    /^PMM release automation schema: 1$/m.test(body ?? "") &&
+    (owner === sourceRepository || (owner === undefined && repository === sourceRepository))
+  );
+}
+function releaseHistory(repository, sourceRepository, revision, branch) {
   const pages = JSON.parse(
     execFileSync("gh", ["api", `repos/${repository}/releases?per_page=100`, "--paginate", "--slurp"], {
       encoding: "utf8",
     })
   );
-  return pages
-    .flat()
-    .filter((release) => !release.draft && !release.prerelease && /^v\d+\.\d+\.\d+$/.test(release.tag_name))
-    .flatMap((release) => {
-      const body = release.body ?? "";
-      const revision = /^Source revision: ([a-f0-9]{40})$/m.exec(body)?.[1];
-      const owner = /^Source repository: ([\w.-]+\/[\w.-]+)$/m.exec(body)?.[1];
-      if (
-        !revision ||
-        !body.includes("PMM release automation schema: 1") ||
-        (owner !== sourceRepository && !(owner === undefined && repository === sourceRepository))
-      )
-        return [];
-      return [{ tag: release.tag_name, revision }];
-    });
+  return pages.flat().flatMap((release) => {
+    const body = release.body ?? "";
+    const sourceRevision = /^Source revision: ([a-f0-9]{40})$/m.exec(body)?.[1];
+    const preview = /^v\d+\.\d+\.\d+-preview\.\d+\.[a-f0-9]{12}$/.test(release.tag_name);
+    if (
+      !sourceRevision ||
+      !ownsRelease(body, repository, sourceRepository) ||
+      (!preview && !/^v\d+\.\d+\.\d+$/.test(release.tag_name)) ||
+      release.prerelease !== preview
+    )
+      return [];
+    let recordedPlan;
+    if (
+      sourceRevision === revision &&
+      preview === (branch === "dev") &&
+      release.assets?.some((asset) => asset.name === "release-plan.json")
+    ) {
+      // A failed download is a planning failure, never permission to invent a new identity.
+      recordedPlan = JSON.parse(
+        execFileSync(
+          "gh",
+          [
+            "release",
+            "download",
+            release.tag_name,
+            "--repo",
+            repository,
+            "--pattern",
+            "release-plan.json",
+            "--output",
+            "-",
+          ],
+          { encoding: "utf8" }
+        )
+      );
+    }
+    return [{ tag: release.tag_name, revision: sourceRevision, draft: release.draft, notes: body, plan: recordedPlan }];
+  });
+}
+function compareVersions(left, right) {
+  const a = parseVersion(left),
+    b = parseVersion(right);
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 }
 function plan(branch, directory = "changes", history = []) {
   if (!["dev", "main"].includes(branch)) throw new Error("Releases originate only from dev or main");
@@ -47,14 +82,39 @@ function plan(branch, directory = "changes", history = []) {
     .split("\n")
     .filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag))
     .map((tag) => ({ tag, revision: git("rev-list", "-n", "1", tag) }));
-  const candidates = [...local, ...history].filter(
-    (release) => branch !== "main" || release.revision !== currentRevision
+  const matches = [...history, ...local].filter(
+    (release) =>
+      release.revision === currentRevision &&
+      (branch === "dev" ? release.tag.includes("-preview.") : /^v\d+\.\d+\.\d+$/.test(release.tag))
   );
-  candidates.sort((left, right) => {
-    const a = parseVersion(left.tag),
-      b = parseVersion(right.tag);
-    return a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
-  });
+  if (new Set(matches.map((release) => release.tag)).size > 1)
+    throw new Error("Multiple release identities exist for this source revision/channel");
+  const existing = matches[0];
+  if (existing?.plan) {
+    const recorded = existing.plan;
+    if (
+      recorded.revision !== currentRevision ||
+      recorded.tag !== existing.tag ||
+      recorded.tag !== `v${recorded.version}` ||
+      recorded.branch !== branch ||
+      recorded.sourceRepository !== process.env.GITHUB_REPOSITORY ||
+      recorded.prerelease !== (branch === "dev") ||
+      recorded.channel !== (branch === "dev" ? "preview" : "latest") ||
+      recorded.notes?.trimEnd() !== existing.notes?.trimEnd()
+    )
+      throw new Error("Recorded release plan does not match source/release identity");
+    return recorded;
+  }
+  // Legacy releases lack a plan asset. Reconstruct from the preceding stable
+  // version, ignoring later promotions, and preserve their recorded notes/tag.
+  const targetStable = existing?.tag.split("-preview.")[0];
+  const candidates = [...local, ...history].filter(
+    (release) =>
+      !release.draft &&
+      /^v\d+\.\d+\.\d+$/.test(release.tag) &&
+      (!targetStable || compareVersions(release.tag, targetStable) < 0)
+  );
+  candidates.sort((left, right) => compareVersions(left.tag, right.tag));
   const baseline = candidates.at(-1);
   const previous = baseline?.tag;
   const base = previous ?? JSON.parse(fs.readFileSync("package.json", "utf8")).version;
@@ -83,13 +143,13 @@ function plan(branch, directory = "changes", history = []) {
   }
   // A synchronized dev revision still gets its own preview of the next patch;
   // stable releases and feature-PR metadata continue to require reviewed entries.
-  const stable = nextVersion(
-    base,
-    entries.length ? entries.map((entry) => entry.bump) : branch === "dev" ? ["patch"] : []
-  );
+  const stable = existing
+    ? targetStable.slice(1)
+    : nextVersion(base, entries.length ? entries.map((entry) => entry.bump) : branch === "dev" ? ["patch"] : []);
   const revision = git("rev-parse", "HEAD");
   const sequence = Number(git("rev-list", "--count", "HEAD"));
-  const version = branch === "dev" ? `${stable}-preview.${sequence}.${revision.slice(0, 12)}` : stable;
+  const version =
+    existing?.tag.slice(1) ?? (branch === "dev" ? `${stable}-preview.${sequence}.${revision.slice(0, 12)}` : stable);
   return {
     branch,
     revision,
@@ -101,22 +161,26 @@ function plan(branch, directory = "changes", history = []) {
     channel: branch === "dev" ? "preview" : "latest",
     prerelease: branch === "dev",
     entries,
-    notes: [
-      `Source revision: ${revision}`,
-      ...(process.env.GITHUB_REPOSITORY ? [`Source repository: ${process.env.GITHUB_REPOSITORY}`] : []),
-      "PMM release automation schema: 1",
-      "",
-      ...entries.map((entry) => `- ${entry.summary} (${entry.issue}; ${entry.file})`),
-      "",
-      "Desktop/browser/package compatibility validation remains pending application issue #13.",
-    ].join("\n"),
+    notes:
+      existing?.notes ??
+      [
+        `Source revision: ${revision}`,
+        ...(process.env.GITHUB_REPOSITORY ? [`Source repository: ${process.env.GITHUB_REPOSITORY}`] : []),
+        "PMM release automation schema: 1",
+        "",
+        ...entries.map((entry) => `- ${entry.summary} (${entry.issue}; ${entry.file})`),
+        "",
+        "Desktop/browser/package compatibility validation remains pending application issue #13.",
+      ].join("\n"),
   };
 }
-module.exports = { parseVersion, nextVersion, plan, releaseHistory };
+module.exports = { parseVersion, nextVersion, plan, releaseHistory, ownsRelease };
 if (require.main === module) {
   const repository = process.env.PMM_RELEASE_REPOSITORY || process.env.GITHUB_REPOSITORY;
   const history =
-    process.env.GITHUB_ACTIONS === "true" ? releaseHistory(repository, process.env.GITHUB_REPOSITORY) : [];
+    process.env.GITHUB_ACTIONS === "true"
+      ? releaseHistory(repository, process.env.GITHUB_REPOSITORY, git("rev-parse", "HEAD"), process.argv[2])
+      : [];
   const result = plan(process.argv[2], "changes", history);
   fs.mkdirSync("release-plan", { recursive: true });
   fs.writeFileSync("release-plan/plan.json", JSON.stringify(result, null, 2) + "\n");

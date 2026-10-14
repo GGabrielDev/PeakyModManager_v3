@@ -2,11 +2,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
+const { ownsRelease } = require("./release-plan.cjs");
 const plan = JSON.parse(fs.readFileSync("release-plan/plan.json", "utf8"));
 const repository = process.env.PMM_RELEASE_REPOSITORY || process.env.GITHUB_REPOSITORY;
 if (!/^[\w.-]+\/[\w.-]+$/.test(repository ?? "")) throw new Error("Publication repository must be OWNER/REPO");
+if (plan.sourceRepository !== process.env.GITHUB_REPOSITORY) throw new Error("Plan/source repository mismatch");
 if (plan.revision !== process.env.GITHUB_SHA) throw new Error("Plan/revision mismatch");
 const gh = (...args) => execFileSync("gh", args, { encoding: "utf8" }).trim();
+fs.writeFileSync("release-assets/release-plan.json", JSON.stringify(plan, null, 2) + "\n");
 fs.writeFileSync("release-assets/source-revision.txt", plan.revision + "\n");
 fs.writeFileSync(
   "release-assets/release-baseline.json",
@@ -49,7 +52,11 @@ try {
 } catch {
   /* create below; an API error also fails creation */
 }
-if (existing && !existing.body.includes(plan.revision))
+if (
+  existing &&
+  (!ownsRelease(existing.body, repository, process.env.GITHUB_REPOSITORY) ||
+    !new RegExp(`^Source revision: ${plan.revision}$`, "m").test(existing.body))
+)
   throw new Error("Existing release belongs to a different revision");
 if (existing && !existing.isDraft) {
   // Verify published checksums rather than comparing fresh non-reproducible installers.
@@ -109,7 +116,7 @@ function retainPreviews() {
       release.prerelease &&
       /^v\d+\.\d+\.\d+-preview\.\d+\.[a-f0-9]{12}$/.test(release.tag_name) &&
       /^Source revision: [a-f0-9]{40}$/m.test(release.body ?? "") &&
-      (release.body ?? "").includes("PMM release automation schema: 1")
+      ownsRelease(release.body, repository, process.env.GITHUB_REPOSITORY)
   );
   const order = (tag) =>
     tag
@@ -124,7 +131,7 @@ function retainPreviews() {
     }
     return 0;
   });
-  for (const release of owned.slice(20)) {
+  for (const release of owned.slice(20).filter((release) => release.tag_name !== plan.tag)) {
     gh("release", "delete", release.tag_name, ...releaseArgs, "--yes", "--cleanup-tag");
   }
 }
