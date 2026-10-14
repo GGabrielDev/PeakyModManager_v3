@@ -165,3 +165,76 @@ it("uses the recorded source baseline when stable tags exist only in a dedicated
     fs.rmSync(directory, { recursive: true, force: true });
   }
 }, 20000);
+
+it("reuses exact preview and stable plans after newer stable promotions", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pmm-historical-plan-"));
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", ...args], {
+      cwd: directory,
+      encoding: "utf8",
+    }).trim();
+  const run = (branch: string, history: unknown[] = []) =>
+    JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          "-e",
+          `console.log(JSON.stringify(require(${JSON.stringify(planner)}).plan(${JSON.stringify(branch)}, 'changes', ${JSON.stringify(history)})))`,
+        ],
+        { cwd: directory, encoding: "utf8", env: { ...process.env, GITHUB_REPOSITORY: "owner/app" } }
+      )
+    );
+  try {
+    git("init", "--initial-branch=main");
+    fs.writeFileSync(path.join(directory, "package.json"), '{"version":"1.0.0"}');
+    fs.mkdirSync(path.join(directory, "changes"));
+    const commit = (name: string) => {
+      fs.writeFileSync(
+        path.join(directory, `changes/${name}.json`),
+        JSON.stringify({
+          bump: "patch",
+          summary: name,
+          issue: "https://github.com/owner/app/issues/1",
+        })
+      );
+      git("add", ".");
+      git("commit", "-m", name);
+    };
+    commit("first");
+    const preview = run("dev"),
+      stable = run("main");
+    git("tag", stable.tag);
+    commit("second");
+    const newer = run("main");
+    git("tag", newer.tag);
+    git("checkout", "--detach", stable.revision);
+    const history = [preview, stable, newer].map((plan) => ({
+      tag: plan.tag,
+      revision: plan.revision,
+      plan,
+      notes: plan.notes,
+    }));
+    expect(run("dev", history)).toEqual(preview);
+    expect(run("main", history)).toEqual(stable);
+    expect(
+      run(
+        "dev",
+        history.map((release) => ({ ...release, notes: release.notes + "\n" }))
+      )
+    ).toEqual(preview);
+    expect(() =>
+      run(
+        "dev",
+        history.map((release) => ({ ...release, plan: { ...release.plan, sourceRepository: "another/fork" } }))
+      )
+    ).toThrow();
+    expect(() => run("dev", [...history, { ...history[0], tag: "v9.0.0-preview.1.aaaaaaaaaaaa" }])).toThrow();
+
+    // Releases created before plan assets existed still preserve identity and notes.
+    const legacy = history.map(({ plan: _plan, ...release }) => release);
+    expect(run("dev", legacy)).toEqual(preview);
+    expect(run("main", legacy)).toEqual(stable);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}, 20000);

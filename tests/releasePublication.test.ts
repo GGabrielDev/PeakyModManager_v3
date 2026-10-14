@@ -31,6 +31,7 @@ if (args[0] === 'release' && args[1] === 'view') {
   state.release.assets = state.release.assets.filter(asset => asset.name !== args[3]);
   fs.rmSync(path.join('published', args[3]), {force:true}); save();
 } else if (args[0] === 'release' && args[1] === 'download') {
+  if (args.includes('--output')) { save(); if (state.failDownload) process.exit(1); console.log(fs.readFileSync('published/release-plan.json','utf8')); process.exit(0); }
   fs.mkdirSync(value('--dir'), {recursive:true});
   for (const file of fs.readdirSync('published')) fs.copyFileSync(path.join('published',file), path.join(value('--dir'),file));
   save();
@@ -38,17 +39,17 @@ if (args[0] === 'release' && args[1] === 'view') {
 } else if (args[0] === 'api') { save(); if (process.env.FAIL_RETENTION === 'true') process.exit(1); console.log(JSON.stringify([ [...(state.previews || []), ...(state.release ? [state.release] : [])] ]));
 } else { save(); process.exit(3); }
 `;
-function fixture(preview = false) {
+function fixture(preview = false, destination = "owner/app") {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pmm-publication-test-"));
   const version = preview ? "1.1.0-preview.30.aaaaaaaaaaaa" : "1.1.0";
   const channel = preview ? "preview" : "latest";
   for (const folder of ["bin", "release-plan", "release-assets"]) fs.mkdirSync(path.join(directory, folder));
   fs.writeFileSync(path.join(directory, "bin/gh"), fakeGh, { mode: 0o755 });
-  const plan = { revision, version, tag: `v${version}`, channel, prerelease: preview };
+  const plan = { sourceRepository: "owner/app", revision, version, tag: `v${version}`, channel, prerelease: preview };
   fs.writeFileSync(path.join(directory, "release-plan/plan.json"), JSON.stringify(plan));
   fs.writeFileSync(
     path.join(directory, "release-plan/notes.md"),
-    `Source revision: ${revision}\nPMM release automation schema: 1\n`
+    `Source revision: ${revision}\nSource repository: owner/app\nPMM release automation schema: 1\n`
   );
   for (const extension of ["AppImage", "deb", "rpm", "exe"]) {
     fs.writeFileSync(path.join(directory, `release-assets/pmm-${version}.${extension}`), `fixture:${extension}`);
@@ -56,23 +57,33 @@ function fixture(preview = false) {
   fs.writeFileSync(path.join(directory, "release-assets/PKGBUILD"), "checksum-pinned fixture");
   for (const suffix of ["", "-linux"])
     fs.writeFileSync(path.join(directory, `release-assets/${channel}${suffix}.yml`), `version: ${version}\n`);
+  const environment = {
+    ...process.env,
+    PATH: `${path.join(directory, "bin")}${path.delimiter}${process.env.PATH}`,
+    GITHUB_SHA: revision,
+    GITHUB_REPOSITORY: "owner/app",
+    PMM_RELEASE_REPOSITORY: destination,
+    GH_TOKEN: "fixture-not-a-real-token",
+  };
   const run = (failUpload = false, failRetention = false) =>
     execFileSync(process.execPath, [publisher], {
       cwd: directory,
-      env: {
-        ...process.env,
-        PATH: `${path.join(directory, "bin")}${path.delimiter}${process.env.PATH}`,
-        GITHUB_SHA: revision,
-        GITHUB_REPOSITORY: "owner/app",
-        PMM_RELEASE_REPOSITORY: "owner/app",
-        GH_TOKEN: "fixture-not-a-real-token",
-        FAIL_UPLOAD: String(failUpload),
-        FAIL_RETENTION: String(failRetention),
-      },
+      env: { ...environment, FAIL_UPLOAD: String(failUpload), FAIL_RETENTION: String(failRetention) },
       stdio: "pipe",
     });
+  const history = (branch: string) =>
+    JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          "-e",
+          `console.log(JSON.stringify(require(${JSON.stringify(path.resolve("scripts/release-plan.cjs"))}).releaseHistory(${JSON.stringify(destination)}, 'owner/app', ${JSON.stringify(revision)}, ${JSON.stringify(branch)})))`,
+        ],
+        { cwd: directory, env: environment, stdio: "pipe" }
+      ).toString()
+    );
   const state = () => JSON.parse(fs.readFileSync(path.join(directory, "fake-gh-state.json"), "utf8"));
-  return { directory, run, state };
+  return { directory, run, state, history };
 }
 // Publication runs on Linux. The local CLI fixture uses a POSIX executable.
 describe.skipIf(process.platform === "win32")("staged publication and recovery", () => {
@@ -128,7 +139,7 @@ describe.skipIf(process.platform === "win32")("staged publication and recovery",
         tag_name: `v1.1.0-preview.${index + 1}.aaaaaaaaaaaa`,
         draft: false,
         prerelease: true,
-        body: `Source revision: ${revision}\nPMM release automation schema: 1\n`,
+        body: `Source revision: ${revision}\nSource repository: owner/app\nPMM release automation schema: 1\n`,
       }));
       fs.writeFileSync(
         path.join(f.directory, "fake-gh-state.json"),
@@ -155,4 +166,96 @@ describe.skipIf(process.platform === "win32")("staged publication and recovery",
       fs.rmSync(f.directory, { recursive: true, force: true });
     }
   }, 20000);
+});
+
+describe.skipIf(process.platform === "win32")("preview retention ownership and historical recovery", () => {
+  it.each(["owner/app", "owner/releases"])(
+    "preserves foreign and active previews in %s",
+    (destination) => {
+      const f = fixture(true, destination);
+      try {
+        f.run();
+        const state = f.state();
+        const release = (sequence: number, owner: string | null) => ({
+          tag_name: `v1.1.0-preview.${sequence}.bbbbbbbbbbbb`,
+          draft: false,
+          prerelease: true,
+          body: `Source revision: ${"b".repeat(40)}\n${owner ? `Source repository: ${owner}\n` : ""}PMM release automation schema: 1\n`,
+        });
+        state.calls = [];
+        state.previews = [
+          ...Array.from({ length: 25 }, (_, index) => release(index + 31, "owner/app")),
+          release(1, "another/fork"),
+          release(2, null),
+          { ...release(3, "owner/app"), draft: true },
+          { ...release(4, "owner/app"), prerelease: false, tag_name: "v1.0.0" },
+        ];
+        fs.writeFileSync(path.join(f.directory, "fake-gh-state.json"), JSON.stringify(state));
+        f.run();
+        const deleted = f
+          .state()
+          .calls.filter((args: string[]) => args[1] === "delete")
+          .map((args: string[]) => args[2]);
+        expect(deleted).not.toContain(state.release.tag_name);
+        expect(deleted).not.toContain(state.previews[25].tag_name);
+        expect(deleted).not.toContain(state.previews[27].tag_name);
+        expect(deleted).not.toContain("v1.0.0");
+        // Markerless legacy ownership is bounded to the source repository itself.
+        expect(deleted.includes(state.previews[26].tag_name)).toBe(destination === "owner/app");
+        expect(deleted).toHaveLength(destination === "owner/app" ? 6 : 5);
+        expect(f.state().calls.filter((args: string[]) => args[1] === "edit")).toHaveLength(0);
+      } finally {
+        fs.rmSync(f.directory, { recursive: true, force: true });
+      }
+    },
+    20000
+  );
+});
+
+describe.skipIf(process.platform === "win32")("recorded plan discovery", () => {
+  it.each([false, true])(
+    "loads exact source/channel plans including recoverable drafts (preview=%s)",
+    (preview) => {
+      const f = fixture(preview, "owner/releases");
+      try {
+        f.run();
+        const state = f.state();
+        state.release.draft = true;
+        state.previews = [
+          { ...state.release, body: state.release.body.replace("owner/app", "another/fork") },
+          { ...state.release, body: state.release.body.replace("Source repository: owner/app\n", "") },
+          {
+            ...state.release,
+            tag_name: "v9.0.0",
+            prerelease: false,
+            draft: false,
+            body: state.release.body.replace(revision, "b".repeat(40)),
+          },
+        ];
+        state.calls = [];
+        fs.writeFileSync(path.join(f.directory, "fake-gh-state.json"), JSON.stringify(state));
+        const history = f.history(preview ? "dev" : "main");
+        expect(history).toHaveLength(2);
+        const exact = history.find((release: { revision: string }) => release.revision === revision);
+        expect(exact.draft).toBe(true);
+        expect(exact.plan).toEqual(
+          JSON.parse(fs.readFileSync(path.join(f.directory, "release-plan/plan.json"), "utf8"))
+        );
+        expect(f.state().calls.filter((args: string[]) => args[1] === "download")).toHaveLength(1);
+        state.failDownload = true;
+        fs.writeFileSync(path.join(f.directory, "fake-gh-state.json"), JSON.stringify(state));
+        expect(() => f.history(preview ? "dev" : "main")).toThrow();
+        state.release.assets = [];
+        fs.writeFileSync(path.join(f.directory, "fake-gh-state.json"), JSON.stringify(state));
+        const legacy = f
+          .history(preview ? "dev" : "main")
+          .find((release: { revision: string }) => release.revision === revision);
+        expect(legacy.plan).toBeUndefined();
+        expect(legacy.notes).toBe(state.release.body);
+      } finally {
+        fs.rmSync(f.directory, { recursive: true, force: true });
+      }
+    },
+    20000
+  );
 });
