@@ -62,9 +62,19 @@ case "$kind" in
   rpm) dnf remove -y "$package_name" ;;
   arch) pacman -R --noconfirm "$package_name" ;;
 esac
-test ! -e "/usr/bin/$executable"
-test ! -L "/usr/bin/$executable"
-test ! -e "/usr/share/applications/$executable.desktop"
-test ! -d "/opt/$install_name"
+if [ -e "/usr/bin/$executable" ] || [ -L "/usr/bin/$executable" ]; then
+  ls -l "/usr/bin/$executable"
+  echo 'Owned executable link remains after removal' >&2
+  exit 1
+fi
+if [ -e "/usr/share/applications/$executable.desktop" ]; then
+  echo 'Owned desktop entry remains after removal' >&2
+  exit 1
+fi
+if [ -d "/opt/$install_name" ]; then
+  ls -laR "/opt/$install_name"
+  echo 'Owned application directory remains after removal' >&2
+  exit 1
+fi
 check_preserved
 printf 'Lifecycle passed: %s -> %s -> removed\n' "$previous_version" "$next_version"
