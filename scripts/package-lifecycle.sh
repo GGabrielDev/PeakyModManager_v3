@@ -8,7 +8,7 @@ install_name=$4
 export DEBIAN_FRONTEND=noninteractive
 case "$kind" in
   deb) apt-get update; apt-get install -y xdg-utils desktop-file-utils ;;
-  rpm) dnf --setopt=install_weak_deps=False install -y xdg-utils desktop-file-utils ;;
+  rpm) dnf --setopt=install_weak_deps=False install -y xdg-utils desktop-file-utils diffutils ;;
   arch)
     pacman -Syu --noconfirm --needed base-devel gtk3 nss libxss alsa-lib xdg-utils desktop-file-utils
     useradd -m builder
